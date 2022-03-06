@@ -1175,24 +1175,42 @@ func (portal *Portal) handleIMAttachment(msg *imessage.Message, attach *imessage
 	extraContent := map[string]interface{}{}
 
 	if msg.IsAudioMessage {
-		data, err = ffmpeg.ConvertBytes(data, ".ogg", []string{}, []string{"-c:a", "libopus"}, "audio/x-caf")
+		ogg, err := ffmpeg.ConvertBytes(data, ".ogg", []string{}, []string{"-c:a", "libopus"}, "audio/x-caf")
 		if err == nil {
 			extraContent["org.matrix.msc1767.audio"] = map[string]interface{}{}
 			extraContent["org.matrix.msc3245.voice"] = map[string]interface{}{}
 			mimeType = "audio/ogg"
 			fileName = "Voice Message.ogg"
+			data = ogg
 		} else {
 			portal.log.Errorf("Failed to convert audio message to OGG. Sending as normal attachment. error: %w", err)
 		}
 	}
 
 	if mimeType == "image/heic" || mimeType == "image/heif" {
-		data, err = convertHeif(data)
+		jpeg, err := convertHeif(data)
 		if err == nil {
 			mimeType = "image/jpeg"
 			fileName = "image.jpg"
+			data = jpeg
 		} else {
 			portal.log.Errorf("Failed to convert HEIC image. Sending without conversion. error: %w", err)
+		}
+	}
+
+	if mimeType == "video/quicktime" {
+		// max resolution of 1080p (the result has to fit in memory)
+		mp4, err := ffmpeg.ConvertBytes(data, ".mp4", []string{}, []string{
+			"-filter:v",
+			"scale='min(1920,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease"},
+			"video/quicktime")
+
+		if err == nil {
+			mimeType = "video/mp4"
+			fileName = "video.mp4"
+			data = mp4
+		} else {
+			portal.log.Errorf("Failed to convert video to MP4. Sending without conversion. error: %w", err)
 		}
 	}
 
